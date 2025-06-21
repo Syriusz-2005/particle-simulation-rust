@@ -1,8 +1,6 @@
-use std::{
-    sync::{Arc, Mutex},
-    thread,
-};
+use std::sync::{Arc, Mutex};
 
+use crate::constants::{K, THREAD_COUNT};
 use crate::{
     particle_type::ParticleTypeManager,
     scene_like::SceneLike,
@@ -20,14 +18,12 @@ pub struct MultithreadedScene {
     pool: ThreadPool,
 }
 
-const THREADS_COUNT: usize = 20;
-
 impl SceneLike for MultithreadedScene {
     fn new(settings: SceneSettings) -> Self {
         return MultithreadedScene {
             particles: Arc::new(vec![]),
             settings: Arc::new(settings),
-            pool: ThreadPool::new(THREADS_COUNT),
+            pool: ThreadPool::new(THREAD_COUNT),
             particle_types: Arc::new(ParticleTypeManager::new(settings.particle_types_count)),
         };
     }
@@ -51,8 +47,8 @@ impl SceneLike for MultithreadedScene {
     }
 
     fn update(&mut self) {
-        let particles_per_job = self.particles.len() / THREADS_COUNT;
-        let particles_mutexes = (0..THREADS_COUNT)
+        let particles_per_job = self.particles.len() / THREAD_COUNT;
+        let particles_mutexes = (0..THREAD_COUNT)
             .map(|job_index| {
                 let particles = Arc::clone(&self.particles);
                 let particle_types = Arc::clone(&self.particle_types);
@@ -65,7 +61,7 @@ impl SceneLike for MultithreadedScene {
                 self.pool.execute(move || {
                     let start_i = job_index * particles_per_job;
                     let end_i = start_i + particles_per_job;
-                    let mut new_particles_local = Vec::<Particle>::with_capacity(particles_per_job);
+                    // let mut new_particles_local = Vec::<Particle>::with_capacity(particles_per_job);
                     for i in start_i..end_i {
                         let particle = particles[i];
                         let mut total_force: Vec2d = [0.0, 0.0];
@@ -88,7 +84,6 @@ impl SceneLike for MultithreadedScene {
                                 }
                                 let distance = len(&direction);
                                 normalize(&mut direction);
-                                const K: f64 = 0.034;
                                 if distance
                                     < particle_types
                                         .get_min_distance(particle.type_index, p.type_index)
@@ -120,7 +115,21 @@ impl SceneLike for MultithreadedScene {
                                 if distance
                                     < particle_types.get_radii(particle.type_index, p.type_index)
                                 {
-                                    let mut force = direction.clone();
+                                    // apply_forces(
+                                    //     &mut total_force,
+                                    //     &direction,
+                                    //     particle_types
+                                    //         .get_forces(particle.type_index, p.type_index),
+                                    //     remap(
+                                    //         distance,
+                                    //         0.0,
+                                    //         particle_types
+                                    //             .get_radii(particle.type_index, p.type_index),
+                                    //         1.0,
+                                    //         0.0,
+                                    //     ),
+                                    // );
+                                    let mut force = direction;
                                     mul_scalar(
                                         &mut force,
                                         particle_types
@@ -155,12 +164,8 @@ impl SceneLike for MultithreadedScene {
                             &mut new_particle.vel,
                             particle_types.get_particle_drag(particle.type_index),
                         );
-                        new_particles_local.push(new_particle);
+                        new_particles_in_thread.lock().unwrap().push(new_particle);
                     }
-                    new_particles_in_thread
-                        .lock()
-                        .unwrap()
-                        .append(&mut new_particles_local);
                 });
                 return new_particles;
             })
@@ -180,12 +185,16 @@ impl SceneLike for MultithreadedScene {
         self.particles = Arc::new(new_particles);
     }
 
-    fn get_particles(&self) -> &Vec<Particle> {
-        return &self.particles;
+    fn get_particles(&self) -> Arc<Vec<Particle>> {
+        return Arc::clone(&self.particles);
     }
 
     fn new_world(&mut self) {
         self.particle_types =
             Arc::new(ParticleTypeManager::new(self.settings.particle_types_count));
+    }
+
+    fn get_particle_color(&self, type_index: usize) -> [f32; 4] {
+        return self.particle_types.get_particle_color(type_index);
     }
 }

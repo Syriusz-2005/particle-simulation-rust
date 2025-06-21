@@ -1,5 +1,6 @@
 use graphics::{types::Color, Colored};
-use rand::{rng, Rng};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 #[derive(Debug)]
 struct ParticleType {
@@ -17,7 +18,7 @@ pub struct ParticleTypeManager {
 
 impl ParticleTypeManager {
     pub fn new(particle_types_count: usize) -> ParticleTypeManager {
-        let random_source = &mut rng();
+        let mut random_source = ChaCha8Rng::seed_from_u64(1);
         let particle_types: Vec<ParticleType> = (0..particle_types_count)
             .map(|i| {
                 let color = Color::from([1.0, 0.0, 0.0, 1.0])

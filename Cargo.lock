@@ -1096,6 +1096,7 @@ dependencies = [
  "piston2d-opengl_graphics",
  "pistoncore-glutin_window",
  "rand 0.9.1",
+ "rand_chacha 0.9.0",
  "threadpool",
 ]
 
