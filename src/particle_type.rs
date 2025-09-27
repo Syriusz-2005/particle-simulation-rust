@@ -67,6 +67,22 @@ impl ParticleTypeManager {
         println!("========================");
     }
 
+    pub fn get_forces_flattened(&self) -> Vec<f32> {
+        self.forces.iter().flatten().map(|v| *v as f32).collect()
+    }
+
+    pub fn get_radii_flattened(&self) -> Vec<f32> {
+        self.radii.iter().flatten().map(|v| *v as f32).collect()
+    }
+
+    pub fn get_min_distance_flattened(&self) -> Vec<f32> {
+        self.min_distances
+            .iter()
+            .flatten()
+            .map(|v| *v as f32)
+            .collect()
+    }
+
     #[inline(always)]
     pub fn get_particle_drag(&self, type_index: usize) -> f64 {
         return self.particle_types[type_index].drag;

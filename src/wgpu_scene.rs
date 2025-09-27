@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{num::NonZero, sync::Arc};
 
 use graphics::math::Vec2d;
 use rand::{rng, Rng};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    ComputePipeline, Device, Queue,
+    BindGroupLayout, ComputePipeline, Device, Queue,
 };
 
 use crate::{
@@ -13,6 +13,15 @@ use crate::{
 };
 
 type Vec2df = Vec2d<f32>;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GlobalUniforms {
+    screen_size: [f32; 2],
+    _padding: [u32; 2],
+    particle_types_count: u32,
+    _padding2: [u32; 3],
+}
 
 pub struct WgpuScene {
     settings: SceneSettings,
@@ -25,6 +34,9 @@ pub struct WgpuScene {
     device: Device,
     pipeline: ComputePipeline,
     queue: Queue,
+
+    uniform_bind_group_layout: BindGroupLayout,
+    storage_bind_group_layout: BindGroupLayout,
 }
 
 impl SceneLike for WgpuScene {
@@ -33,16 +45,125 @@ impl SceneLike for WgpuScene {
         let adapter = instance.request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
         let shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
+
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    count: None,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                }],
+            });
+
+        let storage_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 6,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 7,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                ],
+            });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&storage_bind_group_layout, &uniform_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Compute pipeline"),
-            layout: None,
+            layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: None,
             compilation_options: Default::default(),
             cache: Default::default(),
         });
 
-        WgpuScene {
+        Self {
             settings,
             particle_types: ParticleTypeManager::new(settings.particle_types_count),
             particles_pos: vec![],
@@ -51,6 +172,8 @@ impl SceneLike for WgpuScene {
             device,
             pipeline,
             queue,
+            uniform_bind_group_layout,
+            storage_bind_group_layout,
         }
     }
 
@@ -77,7 +200,7 @@ impl SceneLike for WgpuScene {
         let input_positions_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("input"),
             contents: bytemuck::cast_slice(&self.particles_pos),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE,
         });
         let output_positions_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output"),
@@ -95,7 +218,7 @@ impl SceneLike for WgpuScene {
         let input_velocities_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("input"),
             contents: bytemuck::cast_slice(&self.particles_vel),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE,
         });
         let output_velocities_buffers = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output"),
@@ -113,12 +236,48 @@ impl SceneLike for WgpuScene {
         let input_type_indexes = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("input"),
             contents: bytemuck::cast_slice(&self.particles_type_indexes),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let global_uniforms_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("Uniform buffer"),
+            contents: bytemuck::cast_slice(&[GlobalUniforms {
+                particle_types_count: self.settings.particle_types_count as u32,
+                _padding: [0, 0],
+                screen_size: self.settings.screen_size.map(|x| x as f32),
+                _padding2: [0; 3],
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        let type_forces_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&self.particle_types.get_forces_flattened()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let type_radii_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&self.particle_types.get_radii_flattened()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let type_min_distance_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&self.particle_types.get_min_distance_flattened()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let uniform_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Uniform bind group"),
+            layout: &self.uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: global_uniforms_buffer.as_entire_binding(),
+            }],
         });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bind group"),
-            layout: &self.pipeline.get_bind_group_layout(0),
+            layout: &self.storage_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -140,6 +299,18 @@ impl SceneLike for WgpuScene {
                     binding: 4,
                     resource: output_velocities_buffers.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: type_forces_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: type_radii_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: type_min_distance_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -149,6 +320,7 @@ impl SceneLike for WgpuScene {
             let num_dispatches =
                 (self.particles_pos.len() / 64) as u32 + (self.particles_pos.len() / 64 > 0) as u32;
             pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(1, &uniform_bind_group, &[]);
             pass.dispatch_workgroups(num_dispatches, 1, 1);
         }
 

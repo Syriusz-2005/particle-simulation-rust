@@ -15,6 +15,7 @@ mod wgpu_scene;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[allow(unused_imports)]
 use crate::{
     constants::BENCHMARK_RUNS, multithreaded_scene::MultithreadedScene,
     multithreaded_scene_v2::MultithreadedSceneV2, scene_like::SceneLike, wgpu_scene::WgpuScene,
@@ -53,7 +54,7 @@ const SCREEN_SIZE: [u32; 2] = [2320, 1280];
 fn main() {
     let mut scene = pollster::block_on(WgpuScene::new(SceneSettings {
         screen_size: SCREEN_SIZE,
-        particle_count: 5_000,
+        particle_count: 30_000,
         particle_types_count: 5,
     }));
     scene.init();
