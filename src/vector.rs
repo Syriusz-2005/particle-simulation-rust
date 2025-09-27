@@ -1,7 +1,18 @@
 use core::arch::x86_64;
 use graphics::math::Vec2d;
+use rand::{distr::uniform::SampleUniform, rngs::ThreadRng, Rng};
+use std::ops::Range;
 
 use crate::constants::K;
+
+#[inline(always)]
+#[allow(dead_code)]
+pub fn random_vec<T: SampleUniform + Clone + PartialOrd>(
+    rng: &mut ThreadRng,
+    r: Range<T>,
+) -> Vec2d<T> {
+    [rng.random_range(r.clone()), rng.random_range(r.clone())]
+}
 
 #[inline(always)]
 #[allow(dead_code)]

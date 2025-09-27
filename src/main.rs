@@ -8,14 +8,16 @@ mod constants;
 mod multithreaded_scene;
 mod multithreaded_scene_v2;
 mod particle_type;
+mod receive_into_slice;
 mod scene_like;
 mod vector;
+mod wgpu_scene;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::{
     constants::BENCHMARK_RUNS, multithreaded_scene::MultithreadedScene,
-    multithreaded_scene_v2::MultithreadedSceneV2, scene_like::SceneLike,
+    multithreaded_scene_v2::MultithreadedSceneV2, scene_like::SceneLike, wgpu_scene::WgpuScene,
 };
 use glutin_window::GlutinWindow as Window;
 use graphics::math::Vec2d;
@@ -49,15 +51,15 @@ struct SceneSettings {
 const SCREEN_SIZE: [u32; 2] = [2320, 1280];
 
 fn main() {
-    let mut scene = MultithreadedSceneV2::new(SceneSettings {
+    let mut scene = pollster::block_on(WgpuScene::new(SceneSettings {
         screen_size: SCREEN_SIZE,
-        particle_count: 4400,
-        particle_types_count: 7,
-    });
+        particle_count: 5_000,
+        particle_types_count: 5,
+    }));
     scene.init();
     let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     for _ in 0..BENCHMARK_RUNS {
-        scene.update();
+        pollster::block_on(scene.update());
     }
     let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     let diff = end - start;
@@ -66,10 +68,11 @@ fn main() {
         "[Bench] Average update time {}ms",
         diff.as_secs_f32() * 1000.0 / BENCHMARK_RUNS as f32
     );
+    pollster::block_on(display(&mut scene));
 }
 
 #[allow(dead_code)]
-fn display(scene: &mut impl SceneLike) {
+async fn display(scene: &mut impl SceneLike) {
     let mut window: Window = WindowSettings::new("Simulation window", SCREEN_SIZE)
         .exit_on_esc(true)
         .build()
@@ -86,15 +89,15 @@ fn display(scene: &mut impl SceneLike) {
         }
         if let Some(args) = e.render_args() {
             i += 1;
+            let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            scene.update().await;
+            let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            if i == 100 {
+                println!("Average update time {}ms", diff_sum.as_secs_f32() * 10.0);
+            }
             gl.draw(args.viewport(), |c, gl| {
-                clear([0.0; 4], gl);
-                let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-                scene.update();
-                let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+                clear([0.0, 0.0, 0.0, 1.0], gl);
                 diff_sum += end - start;
-                if i == 100 {
-                    println!("Average update time {}ms", diff_sum.as_secs_f32() * 10.0);
-                }
                 for particle in &*scene.get_particles() {
                     let color = &scene.get_particle_color(particle.type_index);
                     ellipse(

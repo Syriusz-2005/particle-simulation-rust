@@ -19,7 +19,7 @@ pub struct MultithreadedScene {
 }
 
 impl SceneLike for MultithreadedScene {
-    fn new(settings: SceneSettings) -> Self {
+    async fn new(settings: SceneSettings) -> Self {
         return MultithreadedScene {
             particles: Arc::new(vec![]),
             settings: Arc::new(settings),
@@ -46,7 +46,7 @@ impl SceneLike for MultithreadedScene {
         );
     }
 
-    fn update(&mut self) {
+    async fn update(&mut self) {
         let particles_per_job = self.particles.len() / THREAD_COUNT;
         let particles_mutexes = (0..THREAD_COUNT)
             .map(|job_index| {
