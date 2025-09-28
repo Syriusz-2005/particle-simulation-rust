@@ -1,5 +1,6 @@
-use std::{num::NonZero, sync::Arc};
+use std::sync::Arc;
 
+use encase::{impl_vector, ShaderType, UniformBuffer};
 use graphics::math::Vec2d;
 use rand::{rng, Rng};
 use wgpu::{
@@ -14,13 +15,11 @@ use crate::{
 
 type Vec2df = Vec2d<f32>;
 
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(ShaderType, Debug)]
 struct GlobalUniforms {
-    screen_size: [f32; 2],
-    _padding: [u32; 2],
+    screen_size_x: f32,
+    screen_size_y: f32,
     particle_types_count: u32,
-    _padding2: [u32; 3],
 }
 
 pub struct WgpuScene {
@@ -49,16 +48,38 @@ impl SceneLike for WgpuScene {
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    count: None,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        count: None,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
                     },
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        count: None,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                ],
             });
 
         let storage_bind_group_layout =
@@ -232,24 +253,25 @@ impl SceneLike for WgpuScene {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-
         let input_type_indexes = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("input"),
             contents: bytemuck::cast_slice(&self.particles_type_indexes),
             usage: wgpu::BufferUsages::STORAGE,
         });
-
+        let uniforms = GlobalUniforms {
+            screen_size_x: self.settings.screen_size[0] as f32,
+            screen_size_y: self.settings.screen_size[1] as f32,
+            particle_types_count: self.settings.particle_types_count as u32,
+        };
+        let mut encase_uniform_buffer = UniformBuffer::new(Vec::new());
+        encase_uniform_buffer
+            .write(&uniforms)
+            .expect("Uniform buffer should contain uniforms");
         let global_uniforms_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Uniform buffer"),
-            contents: bytemuck::cast_slice(&[GlobalUniforms {
-                particle_types_count: self.settings.particle_types_count as u32,
-                _padding: [0, 0],
-                screen_size: self.settings.screen_size.map(|x| x as f32),
-                _padding2: [0; 3],
-            }]),
+            contents: encase_uniform_buffer.into_inner().as_slice(),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-
         let type_forces_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&self.particle_types.get_forces_flattened()),
@@ -265,14 +287,34 @@ impl SceneLike for WgpuScene {
             contents: bytemuck::cast_slice(&self.particle_types.get_min_distance_flattened()),
             usage: wgpu::BufferUsages::STORAGE,
         });
+        let type_masses_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&self.particle_types.get_masses()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let type_drag_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&self.particle_types.get_drag()),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
 
         let uniform_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Uniform bind group"),
             layout: &self.uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: global_uniforms_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: global_uniforms_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: type_masses_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: type_drag_buffer.as_entire_binding(),
+                },
+            ],
         });
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {

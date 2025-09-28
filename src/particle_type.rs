@@ -18,7 +18,12 @@ pub struct ParticleTypeManager {
 
 impl ParticleTypeManager {
     pub fn new(particle_types_count: usize) -> ParticleTypeManager {
-        let mut random_source = ChaCha8Rng::seed_from_u64(1);
+        // Nice seeds:
+        /*
+         * 1
+         * 6 - unstable, but many persitent small structures that do not merge together
+         */
+        let mut random_source = ChaCha8Rng::seed_from_u64(6);
         let particle_types: Vec<ParticleType> = (0..particle_types_count)
             .map(|i| {
                 let color = Color::from([1.0, 0.0, 0.0, 1.0])
@@ -81,6 +86,14 @@ impl ParticleTypeManager {
             .flatten()
             .map(|v| *v as f32)
             .collect()
+    }
+
+    pub fn get_masses(&self) -> Vec<f32> {
+        self.particle_types.iter().map(|t| t.mass as f32).collect()
+    }
+
+    pub fn get_drag(&self) -> Vec<f32> {
+        self.particle_types.iter().map(|t| t.drag as f32).collect()
     }
 
     #[inline(always)]

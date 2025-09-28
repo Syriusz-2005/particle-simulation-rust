@@ -54,21 +54,21 @@ const SCREEN_SIZE: [u32; 2] = [2320, 1280];
 fn main() {
     let mut scene = pollster::block_on(WgpuScene::new(SceneSettings {
         screen_size: SCREEN_SIZE,
-        particle_count: 30_000,
+        particle_count: 5_000,
         particle_types_count: 5,
     }));
     scene.init();
-    let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    for _ in 0..BENCHMARK_RUNS {
-        pollster::block_on(scene.update());
-    }
-    let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let diff = end - start;
-    println!("[Bench] ({}x) {}ms", BENCHMARK_RUNS, diff.as_millis());
-    println!(
-        "[Bench] Average update time {}ms",
-        diff.as_secs_f32() * 1000.0 / BENCHMARK_RUNS as f32
-    );
+    // let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    // for _ in 0..BENCHMARK_RUNS {
+    //     pollster::block_on(scene.update());
+    // }
+    // let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    // let diff = end - start;
+    // println!("[Bench] ({}x) {}ms", BENCHMARK_RUNS, diff.as_millis());
+    // println!(
+    //     "[Bench] Average update time {}ms",
+    //     diff.as_secs_f32() * 1000.0 / BENCHMARK_RUNS as f32
+    // );
     pollster::block_on(display(&mut scene));
 }
 
